@@ -1,19 +1,15 @@
-name: Sync OpenWRT Releases
+name: Sync and Build OpenWRT Releases
 
 on:
-  workflow_dispatch: # Возможность вручную запустить Action
+  workflow_dispatch: # Ручной запуск
 
 jobs:
-  sync-releases:
+  sync-and-build:
     runs-on: ubuntu-latest
-    outputs:
-      release_exists: ${{ steps.check_release.outputs.release_exists }}
-      release_tag: ${{ steps.get_release.outputs.release_tag }} 
     steps:
       - name: Checkout your repo
         uses: actions/checkout@v4
 
-      # Вместо получения последнего релиза OpenWRT — указываем вашу версию вручную
       - name: Set fixed OpenWRT version
         id: get_release
         run: |
@@ -25,8 +21,7 @@ jobs:
       - name: Check if release exists in your repo
         id: check_release
         run: |
-          # Используйте имя вашего репозитория вместо Slava-Shchipunov
-          RELEASE_EXISTS=$(curl -s https://api.github.com/repos/YOUR_USERNAME/awg-openwrt/releases/tags/${{ steps.get_release.outputs.release_tag }} | jq -r .tag_name)
+          RELEASE_EXISTS=$(curl -s https://api.github.com/repos/ВАШЕ_ИМЯ_ПОЛЬЗОВАТЕЛЯ/awg-openwrt/releases/tags/${{ steps.get_release.outputs.release_tag }} | jq -r .tag_name)
           if [ "$RELEASE_EXISTS" == "null" ]; then
             echo "release_exists=false" >> $GITHUB_OUTPUT
           else
@@ -48,23 +43,49 @@ jobs:
           -----------------------------------------------------
           \`\`\`"
 
-          curl -X POST https://api.github.com/repos/YOUR_USERNAME/awg-openwrt/releases \
+          curl -X POST https://api.github.com/repos/ВАШЕ_ИМЯ_ПОЛЬЗОВАТЕЛЯ/awg-openwrt/releases \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg tag "${{ steps.get_release.outputs.release_tag }}" \
                     --arg name "Build amnezia wg for all devices with openwrt ${{ steps.get_release.outputs.release_tag }}" \
                     --arg body "$ART" \
                     '{ tag_name: $tag, name: $name, body: $body }')"
-  
-  run-build:
-    runs-on: ubuntu-latest
-    needs: sync-releases
-    if: needs.sync-releases.outputs.release_exists == 'false'
-    # Замените Slava-Shchipunov на ваше имя пользователя
-    uses: nilservice/awg-openwrt/.github/workflows/build-module.yml@master
-    with:
-      tag_name: ${{ needs.sync-releases.outputs.release_tag }}
-      target: ramips
-      subtarget: mt7621
-      pkgarch: mipsel_24kc
-      vermagic: f31f6f85a36836e510d64a18a9a5f1bf-r1
+
+      - name: Build packages
+        if: steps.check_release.outputs.release_exists == 'false'
+        run: |
+          # Клонируем исходники AmneziaWG
+          git clone https://github.com/Slava-Shchipunov/awg-openwrt.git amneziawg
+          
+          # Устанавливаем зависимости для сборки
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libncurses5-dev unzip gawk git subversion mercurial wget gettext
+          
+          # Скачиваем SDK для вашей версии OpenWrt
+          wget https://mirror.kroks.ru/openwrt/24.10.7/targets/ramips/mt7621/openwrt-sdk-24.10.7-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.xz
+          tar -xf openwrt-sdk-*.tar.xz
+          cd openwrt-sdk-*
+          
+          # Копируем исходники пакета в SDK
+          cp -r ../amneziawg package/
+          
+          # Настраиваем сборку только для kmod-amneziawg
+          echo "CONFIG_PACKAGE_kmod-amneziawg=y" >> .config
+          echo "CONFIG_PACKAGE_amneziawg-tools=y" >> .config
+          echo "CONFIG_PACKAGE_luci-proto-amneziawg=y" >> .config
+          
+          # Собираем пакеты
+          make defconfig
+          make package/amneziawg/compile V=s
+          
+          # Копируем собранные пакеты в корень
+          cp bin/packages/mipsel_24kc/amneziawg/*.ipk ../../
+          cd ../../
+          
+          # Загружаем пакеты в релиз
+          for file in *.ipk; do
+            curl -X POST https://uploads.github.com/repos/nilservice/awg-openwrt/releases/${{ steps.get_release.outputs.release_tag }}/assets \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file"
+          done
