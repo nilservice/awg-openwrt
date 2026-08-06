@@ -21,7 +21,7 @@ jobs:
       - name: Check if release exists in your repo
         id: check_release
         run: |
-          RELEASE_EXISTS=$(curl -s https://api.github.com/repos/ВАШЕ_ИМЯ_ПОЛЬЗОВАТЕЛЯ/awg-openwrt/releases/tags/${{ steps.get_release.outputs.release_tag }} | jq -r .tag_name)
+          RELEASE_EXISTS=$(curl -s https://api.github.com/repos/nilservice/awg-openwrt/releases/tags/${{ steps.get_release.outputs.release_tag }} | jq -r .tag_name)
           if [ "$RELEASE_EXISTS" == "null" ]; then
             echo "release_exists=false" >> $GITHUB_OUTPUT
           else
@@ -43,7 +43,7 @@ jobs:
           -----------------------------------------------------
           \`\`\`"
 
-          curl -X POST https://api.github.com/repos/ВАШЕ_ИМЯ_ПОЛЬЗОВАТЕЛЯ/awg-openwrt/releases \
+          curl -X POST https://api.github.com/repos/nilservice/awg-openwrt/releases \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg tag "${{ steps.get_release.outputs.release_tag }}" \
@@ -54,7 +54,7 @@ jobs:
       - name: Build packages
         if: steps.check_release.outputs.release_exists == 'false'
         run: |
-          # Скачиваем SDK (если ещё не скачан)
+          # Скачиваем SDK
           wget https://downloads.openwrt.org/releases/24.10.7/targets/ramips/mt7621/openwrt-sdk-24.10.7-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst
 
           # Распаковываем SDK
@@ -63,12 +63,14 @@ jobs:
           # Клонируем исходники AmneziaWG
           git clone https://github.com/Slava-Shchipunov/awg-openwrt.git
 
-          # Находим имя распакованной папки SDK и переходим в неё
+          # Находим имя распакованной папки SDK
           SDK_DIR=$(ls -d openwrt-sdk-*/)
-          cd $SDK_DIR
 
-          # Копируем исходники в папку package SDK
-          cp -r ../awg-openwrt package/amneziawg
+          # Копируем исходники внутрь SDK
+          cp -r awg-openwrt $SDK_DIR/package/amneziawg
+
+          # Переходим в SDK
+          cd $SDK_DIR
 
           # Настраиваем сборку
           echo "CONFIG_PACKAGE_kmod-amneziawg=y" >> .config
@@ -78,15 +80,20 @@ jobs:
 
           # Собираем пакеты
           make package/amneziawg/compile V=s
-          
+
           # Копируем собранные пакеты в корень
-          cp bin/packages/mipsel_24kc/amneziawg/*.ipk ../../
-          cd ../../
-          
+          mkdir -p ../packages
+          cp bin/packages/mipsel_24kc/amneziawg/*.ipk ../packages/ 2>/dev/null || echo "No packages found"
+
+          # Возвращаемся в корень
+          cd ../
+
           # Загружаем пакеты в релиз
-          for file in *.ipk; do
-            curl -X POST https://uploads.github.com/repos/nilservice/awg-openwrt/releases/${{ steps.get_release.outputs.release_tag }}/assets \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$file"
+          for file in packages/*.ipk; do
+            if [ -f "$file" ]; then
+              curl -X POST https://uploads.github.com/repos/nilservice/awg-openwrt/releases/${{ steps.get_release.outputs.release_tag }}/assets \
+                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$file"
+            fi
           done
