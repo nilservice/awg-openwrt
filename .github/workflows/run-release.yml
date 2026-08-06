@@ -54,46 +54,66 @@ jobs:
       - name: Build packages
         if: steps.check_release.outputs.release_exists == 'false'
         run: |
-          # Скачиваем SDK
+          # 1. Скачиваем SDK
+          echo "=== Скачиваем SDK ==="
           wget https://downloads.openwrt.org/releases/24.10.7/targets/ramips/mt7621/openwrt-sdk-24.10.7-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst
 
-          # Распаковываем SDK
+          # 2. Распаковываем SDK
+          echo "=== Распаковываем SDK ==="
           tar -xf openwrt-sdk-*.tar.zst
 
-          # Клонируем исходники AmneziaWG
+          # 3. Клонируем исходники AmneziaWG
+          echo "=== Клонируем исходники ==="
           git clone https://github.com/Slava-Shchipunov/awg-openwrt.git
 
-          # Находим имя распакованной папки SDK
-          SDK_DIR=$(ls -d openwrt-sdk-*/)
+          # 4. Показываем структуру папок
+          echo "=== Содержимое текущей папки ==="
+          ls -la
 
-          # Копируем исходники внутрь SDK
+          # 5. Находим папку SDK
+          SDK_DIR=$(ls -d openwrt-sdk-*/)
+          echo "=== Папка SDK: $SDK_DIR ==="
+
+          # 6. Копируем исходники в папку package внутри SDK
+          echo "=== Копируем исходники в SDK ==="
           cp -r awg-openwrt $SDK_DIR/package/amneziawg
 
-          # Переходим в SDK
+          # 7. Проверяем, что скопировалось
+          echo "=== Проверка: содержимое package/amneziawg в SDK ==="
+          ls -la $SDK_DIR/package/amneziawg
+
+          # 8. Переходим в SDK
           cd $SDK_DIR
 
-          # Настраиваем сборку
+          # 9. Настраиваем конфигурацию
+          echo "=== Настраиваем конфигурацию ==="
           echo "CONFIG_PACKAGE_kmod-amneziawg=y" >> .config
           echo "CONFIG_PACKAGE_amneziawg-tools=y" >> .config
           echo "CONFIG_PACKAGE_luci-proto-amneziawg=y" >> .config
           make defconfig
 
-          # Собираем пакеты
+          # 10. Собираем пакеты
+          echo "=== Собираем пакеты ==="
           make package/amneziawg/compile V=s
 
-          # Копируем собранные пакеты в корень
+          # 11. Копируем готовые пакеты
+          echo "=== Копируем пакеты ==="
           mkdir -p ../packages
           cp bin/packages/mipsel_24kc/amneziawg/*.ipk ../packages/ 2>/dev/null || echo "No packages found"
 
-          # Возвращаемся в корень
-          cd ../
+          # 12. Возвращаемся в корень
+          cd ..
 
-          # Загружаем пакеты в релиз
+          # 13. Загружаем пакеты в релиз
+          echo "=== Загружаем пакеты в релиз ==="
           for file in packages/*.ipk; do
             if [ -f "$file" ]; then
+              echo "Загружаем: $file"
               curl -X POST https://uploads.github.com/repos/nilservice/awg-openwrt/releases/${{ steps.get_release.outputs.release_tag }}/assets \
                 -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
                 -H "Content-Type: application/octet-stream" \
                 --data-binary @"$file"
+            else
+              echo "Нет файлов для загрузки"
             fi
           done
