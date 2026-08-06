@@ -54,11 +54,18 @@ jobs:
       - name: Build packages
         if: steps.check_release.outputs.release_exists == 'false'
         run: |
+          # Скачиваем SDK (если ещё не скачан)
+          wget https://downloads.openwrt.org/releases/24.10.7/targets/ramips/mt7621/openwrt-sdk-24.10.7-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+
+          # Распаковываем SDK
+          tar -xf openwrt-sdk-*.tar.zst
+
           # Клонируем исходники AmneziaWG
           git clone https://github.com/Slava-Shchipunov/awg-openwrt.git
 
-          # Переходим в папку с распакованным SDK
-          cd openwrt-sdk-*/
+          # Находим имя распакованной папки SDK и переходим в неё
+          SDK_DIR=$(ls -d openwrt-sdk-*/)
+          cd $SDK_DIR
 
           # Копируем исходники в папку package SDK
           cp -r ../awg-openwrt package/amneziawg
