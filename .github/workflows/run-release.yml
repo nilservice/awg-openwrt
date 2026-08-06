@@ -55,29 +55,21 @@ jobs:
         if: steps.check_release.outputs.release_exists == 'false'
         run: |
           # Клонируем исходники AmneziaWG
-          git clone https://github.com/Slava-Shchipunov/awg-openwrt.git amneziawg
-          
-          # Устанавливаем зависимости для сборки
-          sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev libncurses5-dev unzip gawk git subversion mercurial wget gettext
-          
-          # Скачиваем SDK с официального зеркала
-          wget https://downloads.openwrt.org/releases/24.10.7/targets/ramips/mt7621/openwrt-sdk-24.10.7-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+          git clone https://github.com/Slava-Shchipunov/awg-openwrt.git
 
-          # Распаковываем (обратите внимание на расширение .zst)
-          tar -xf openwrt-sdk-*.tar.zst
+          # Переходим в папку с распакованным SDK
           cd openwrt-sdk-*/
-          
-          # Копируем исходники пакета в SDK
-          cp -r ../amneziawg package/
-          
-          # Настраиваем сборку только для kmod-amneziawg
+
+          # Копируем исходники в папку package SDK
+          cp -r ../awg-openwrt package/amneziawg
+
+          # Настраиваем сборку
           echo "CONFIG_PACKAGE_kmod-amneziawg=y" >> .config
           echo "CONFIG_PACKAGE_amneziawg-tools=y" >> .config
           echo "CONFIG_PACKAGE_luci-proto-amneziawg=y" >> .config
-          
-          # Собираем пакеты
           make defconfig
+
+          # Собираем пакеты
           make package/amneziawg/compile V=s
           
           # Копируем собранные пакеты в корень
